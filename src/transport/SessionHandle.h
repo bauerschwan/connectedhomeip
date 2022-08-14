@@ -17,39 +17,4 @@
 
 #pragma once
 
-#include <access/SubjectDescriptor.h>
-#include <lib/support/ReferenceCountedHandle.h>
-
-namespace chip {
-
-namespace Transport {
-class Session;
-} // namespace Transport
-
-class SessionHolder;
-
-/** @brief
- *    Non-copyable session reference. All SessionHandles are created within SessionManager. SessionHandle is not
- *    reference *counted, hence it is not allowed to store SessionHandle anywhere except for function arguments and
- *    return values. SessionHandle is short-lived as it is only available as stack variable, so it is never dangling. */
-class SessionHandle
-{
-public:
-    SessionHandle(Transport::Session & session) : mSession(session) {}
-    ~SessionHandle() {}
-
-    SessionHandle(const SessionHandle &) = delete;
-    SessionHandle operator=(const SessionHandle &) = delete;
-    SessionHandle(SessionHandle &&)                = default;
-    SessionHandle & operator=(SessionHandle &&) = delete;
-
-    bool operator==(const SessionHandle & that) const { return &mSession.Get() == &that.mSession.Get(); }
-
-    Transport::Session * operator->() const { return mSession.operator->(); }
-
-private:
-    friend class SessionHolder;
-    ReferenceCountedHandle<Transport::Session> mSession;
-};
-
-} // namespace chip
+#include <transport/Session.h>

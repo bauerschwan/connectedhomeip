@@ -56,7 +56,7 @@ async function asTypedExpressionFromObjectiveC(value, type)
   let expr = [];
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
-    if ([ '+', '-', '/', '*', '%' ].includes(token)) {
+    if ([ '+', '-', '/', '*', '%', '(', ')' ].includes(token)) {
       expr[i] = token;
     } else if (!isNaN(token.replace(/ULL$|UL$|U$|LL$|L$/i, ''))) {
       expr[i] = await appHelper.asTypedLiteral.call(this, token, type);
@@ -131,7 +131,7 @@ async function asObjectiveCClass(type, cluster, options)
   }
 
   if (isStruct) {
-    return `CHIP${appHelper.asUpperCamelCase(cluster)}Cluster${appHelper.asUpperCamelCase(type)}`;
+    return `MTR${appHelper.asUpperCamelCase(cluster)}Cluster${appHelper.asUpperCamelCase(type)}`;
   }
 
   return 'NSNumber';
@@ -204,7 +204,7 @@ function objCEnumName(clusterName, enumLabel)
     enumLabel = enumLabel.substring(0, enumLabel.length - "Enum".length);
   }
 
-  return "CHIP" + clusterName + enumLabel;
+  return "MTR" + clusterName + enumLabel;
 }
 
 function objCEnumItemLabel(itemLabel)

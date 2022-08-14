@@ -367,7 +367,7 @@ class DeviceMgrCmd(Cmd):
         setup-payload generate [options]
 
         Options:
-          -vr  Version        
+          -vr  Version
           -vi  Vendor ID
           -pi  Product ID
           -cf  Custom Flow [Standard = 0, UserActionRequired = 1, Custom = 2]
@@ -552,8 +552,7 @@ class DeviceMgrCmd(Cmd):
             print("Device is assigned with nodeid = {}".format(nodeid))
 
             if args[0] == "-ip" and len(args) >= 3:
-                self.devCtrl.EstablishPASESessionIP(args[1].encode(
-                    "utf-8"), int(args[2]), nodeid)
+                self.devCtrl.EstablishPASESessionIP(args[1], int(args[2]), nodeid)
             else:
                 print("Usage:")
                 self.do_help("paseonly")
@@ -614,8 +613,7 @@ class DeviceMgrCmd(Cmd):
             print("Device is assigned with nodeid = {}".format(nodeid))
 
             if args[0] == "-ip" and len(args) >= 3:
-                self.devCtrl.CommissionIP(args[1].encode(
-                    "utf-8"), int(args[2]), nodeid)
+                self.devCtrl.CommissionIP(args[1], int(args[2]), nodeid)
             elif args[0] == "-ble" and len(args) >= 3:
                 self.devCtrl.ConnectBLE(int(args[1]), int(args[2]), nodeid)
             elif args[0] in ['-qr', '-code'] and len(args) >= 2:
@@ -672,12 +670,14 @@ class DeviceMgrCmd(Cmd):
         try:
             args = shlex.split(line)
             if len(args) == 1:
-                err = self.devCtrl.ResolveNode(int(args[0]))
-                if err == 0:
+                try:
+                    self.devCtrl.ResolveNode(int(args[0]))
                     address = self.devCtrl.GetAddressAndPort(int(args[0]))
                     address = "{}:{}".format(
                         *address) if address else "unknown"
                     print("Current address: " + address)
+                except exceptions.ChipStackException as ex:
+                    print(str(ex))
             else:
                 self.do_help("resolve")
         except exceptions.ChipStackException as ex:
@@ -946,7 +946,7 @@ class DeviceMgrCmd(Cmd):
                 self.do_help("set-pairing-wifi-credential")
                 return
             self.devCtrl.SetWiFiCredentials(
-                args[0].encode("utf-8"), args[1].encode("utf-8"))
+                args[0], args[1])
         except Exception as ex:
             print(str(ex))
             return
@@ -971,7 +971,7 @@ class DeviceMgrCmd(Cmd):
         open-commissioning-window <nodeid> [options]
 
         Options:
-          -t  Timeout (in seconds)     
+          -t  Timeout (in seconds)
           -o  Option  [TokenWithRandomPIN = 1, TokenWithProvidedPIN = 2]
           -d  Discriminator Value
           -i  Iteration
@@ -1024,7 +1024,7 @@ class DeviceMgrCmd(Cmd):
                 return
 
             compressed_fabricid = self.devCtrl.GetCompressedFabricId()
-            raw_fabricid = self.devCtrl.GetFabricId()
+            raw_fabricid = self.devCtrl.fabricId
         except exceptions.ChipStackException as ex:
             print("An exception occurred during reading FabricID:")
             print(str(ex))

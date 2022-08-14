@@ -80,14 +80,14 @@ CHIP_ERROR DefaultSessionResumptionStorage::Delete(const ScopedNodeId & node)
     if (err == CHIP_NO_ERROR)
     {
         err = DeleteLink(resumptionId);
-        if (err != CHIP_NO_ERROR)
+        if (err != CHIP_NO_ERROR && err != CHIP_ERROR_PERSISTED_STORAGE_VALUE_NOT_FOUND)
         {
             ChipLogError(SecureChannel,
                          "Unable to delete session resumption link for node " ChipLogFormatX64 ": %" CHIP_ERROR_FORMAT,
                          ChipLogValueX64(node.GetNodeId()), err.Format());
         }
     }
-    else
+    else if (err != CHIP_ERROR_PERSISTED_STORAGE_VALUE_NOT_FOUND)
     {
         ChipLogError(SecureChannel,
                      "Unable to load session resumption state during session deletion for node " ChipLogFormatX64
@@ -96,7 +96,7 @@ CHIP_ERROR DefaultSessionResumptionStorage::Delete(const ScopedNodeId & node)
     }
 
     err = DeleteState(node);
-    if (err != CHIP_NO_ERROR)
+    if (err != CHIP_NO_ERROR && err != CHIP_ERROR_PERSISTED_STORAGE_VALUE_NOT_FOUND)
     {
         ChipLogError(SecureChannel, "Unable to delete session resumption state for node " ChipLogFormatX64 ": %" CHIP_ERROR_FORMAT,
                      ChipLogValueX64(node.GetNodeId()), err.Format());
@@ -209,7 +209,7 @@ CHIP_ERROR DefaultSessionResumptionStorage::DeleteAll(FabricIndex fabricIndex)
             ChipLogError(
                 SecureChannel,
                 "Session resumption cache is in an inconsistent state!  "
-                "Unable to save session resumption index during atetmpted deletion of fabric index %u: %" CHIP_ERROR_FORMAT,
+                "Unable to save session resumption index during attempted deletion of fabric index %u: %" CHIP_ERROR_FORMAT,
                 fabricIndex, err.Format());
         }
     }

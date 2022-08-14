@@ -23,7 +23,6 @@ from dataclasses import dataclass, field
 from typing import *
 from ctypes import *
 from rich.pretty import pprint
-import ipdb
 import json
 import logging
 import base64
@@ -35,8 +34,8 @@ import builtins
 _SyncSetKeyValueCbFunct = CFUNCTYPE(
     None, py_object, c_char_p, POINTER(c_char),  c_uint16)
 _SyncGetKeyValueCbFunct = CFUNCTYPE(
-    None, py_object, c_char_p, POINTER(c_char), POINTER(c_uint16))
-_SyncDeleteKeyValueCbFunct = CFUNCTYPE(None, py_object, POINTER(c_char_p))
+    None, py_object, c_char_p, POINTER(c_char), POINTER(c_uint16), POINTER(c_bool))
+_SyncDeleteKeyValueCbFunct = CFUNCTYPE(None, py_object, c_char_p)
 
 
 @_SyncSetKeyValueCbFunct
@@ -45,31 +44,44 @@ def _OnSyncSetKeyValueCb(storageObj, key: str, value, size):
 
 
 @_SyncGetKeyValueCbFunct
-def _OnSyncGetKeyValueCb(storageObj, key: str, value, size):
+def _OnSyncGetKeyValueCb(storageObj, key: str, value, size, is_found):
+    ''' This does not adhere to the API requirements of
+    PersistentStorageDelegate::SyncGetKeyValue, but that is okay since
+    the C++ storage binding layer is capable of adapting results from
+    this method to the requirements of
+    PersistentStorageDelegate::SyncGetKeyValue.
+    '''
     try:
         keyValue = storageObj.GetSdkKey(key.decode("utf-8"))
     except Exception as ex:
         keyValue = None
 
-    if (keyValue):
-        if (size[0] < len(keyValue)):
-            size[0] = len(keyValue)
-            return
+    if (keyValue is not None):
+        sizeOfValue = size[0]
+        sizeToCopy = min(sizeOfValue, len(keyValue))
 
         count = 0
 
         for idx, val in enumerate(keyValue):
+            if sizeToCopy == count:
+                break
             value[idx] = val
             count = count + 1
 
-        size[0] = count
+        # As mentioned above, we are intentionally not returning
+        # sizeToCopy as one might expect because the caller
+        # will use the value in size[0] to determine if it should
+        # return CHIP_ERROR_BUFFER_TOO_SMALL.
+        size[0] = len(keyValue)
+        is_found[0] = True
     else:
+        is_found[0] = False
         size[0] = 0
 
 
 @_SyncDeleteKeyValueCbFunct
 def _OnSyncDeleteKeyValueCb(storageObj, key):
-    storageObj.SetSdkKey(key.decode("utf-8"), None)
+    storageObj.DeleteSdkKey(key.decode("utf-8"))
 
 
 class PersistentStorage:
@@ -77,6 +89,7 @@ class PersistentStorage:
     def __init__(self, path: str):
         self._path = path
         self._handle = chip.native.GetLibraryHandle()
+        self._isActive = True
 
         try:
             self._file = open(path, 'r')
@@ -108,8 +121,9 @@ class PersistentStorage:
                 self._file = open(self._path, 'w')
             except Exception as ex:
                 logging.warn(
-                    f"Could not open {path} for writing configuration. Error:")
+                    f"Could not open {self._path} for writing configuration. Error:")
                 logging.warn(ex)
+                return
 
         self._file.seek(0)
         json.dump(self.jsonData, self._file, ensure_ascii=True, indent=4)
@@ -139,7 +153,7 @@ class PersistentStorage:
             raise ValueError("Invalid Key")
 
         if (value is None):
-            del(self.jsonData['sdk-config'][key])
+            raise ValueError('value is not expected to be None')
         else:
             self.jsonData['sdk-config'][key] = base64.b64encode(
                 value).decode("utf-8")
@@ -149,10 +163,22 @@ class PersistentStorage:
     def GetSdkKey(self, key: str):
         return base64.b64decode(self.jsonData['sdk-config'][key])
 
+    def DeleteSdkKey(self, key: str):
+        del(self.jsonData['sdk-config'][key])
+        self.Sync()
+
     def GetUnderlyingStorageAdapter(self):
         return self._storageAdapterObj
 
-    def __del__(self):
+    def Shutdown(self):
         builtins.chipStack.Call(
             lambda: self._handle.pychip_Storage_ShutdownAdapter()
         )
+
+        self._isActive = False
+
+    def __del__(self):
+        if (self._isActive):
+            builtins.chipStack.Call(
+                lambda: self._handle.pychip_Storage_ShutdownAdapter()
+            )

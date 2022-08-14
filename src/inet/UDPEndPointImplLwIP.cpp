@@ -60,6 +60,16 @@ static_assert(LWIP_VERSION_MAJOR > 1, "CHIP requires LwIP 2.0 or later");
 #endif
 
 namespace chip {
+namespace Platform {
+template <>
+struct Deleter<struct pbuf>
+{
+    void operator()(struct pbuf * p) { pbuf_free(p); }
+};
+} // namespace Platform
+} // namespace chip
+
+namespace chip {
 namespace Inet {
 
 CHIP_ERROR UDPEndPointImplLwIP::BindImpl(IPAddressType addressType, const IPAddress & address, uint16_t port,
@@ -241,6 +251,19 @@ void UDPEndPointImplLwIP::CloseImpl()
         udp_remove(mUDP);
         mUDP              = nullptr;
         mLwIPEndPointType = LwIPEndPointType::Unknown;
+
+        // In case that there is a UDPEndPointImplLwIP::LwIPReceiveUDPMessage
+        // event pending in the event queue (SystemLayer::ScheduleLambda), we
+        // schedule a release call to the end of the queue, to ensure that the
+        // queued pointer to UDPEndPointImplLwIP is not dangling.
+        Retain();
+        CHIP_ERROR err = GetSystemLayer().ScheduleLambda([this] { Release(); });
+        if (err != CHIP_NO_ERROR)
+        {
+            ChipLogError(Inet, "Unable scedule lambda: %" CHIP_ERROR_FORMAT, err.Format());
+            // There is nothing we can do here, accept the chance of racing
+            Release();
+        }
     }
 
     // Unlock LwIP stack
@@ -339,27 +362,20 @@ CHIP_ERROR UDPEndPointImplLwIP::GetPCB(IPAddressType addrType)
 void UDPEndPointImplLwIP::LwIPReceiveUDPMessage(void * arg, struct udp_pcb * pcb, struct pbuf * p, const ip_addr_t * addr,
                                                 u16_t port)
 {
-    UDPEndPointImplLwIP * ep       = static_cast<UDPEndPointImplLwIP *>(arg);
-    IPPacketInfo * pktInfo         = nullptr;
-    System::PacketBufferHandle buf = System::PacketBufferHandle::Adopt(p);
-    if (buf->HasChainedBuffer())
+    Platform::UniquePtr<struct pbuf> pbufFreeGuard(p);
+    UDPEndPointImplLwIP * ep = static_cast<UDPEndPointImplLwIP *>(arg);
+    IPPacketInfo * pktInfo   = nullptr;
+    if (ep->mState == State::kClosed)
     {
-        // Try the simple expedient of flattening in-place.
-        buf->CompactHead();
+        return;
     }
-
-    if (buf->HasChainedBuffer())
+    // TODO: Skip copying the buffer if the pbuf already meets the PacketBuffer memory model
+    System::PacketBufferHandle buf = System::PacketBufferHandle::New(p->tot_len);
+    if (buf.IsNull() || pbuf_copy_partial(p, buf->Start(), p->tot_len, 0) != p->tot_len)
     {
-        // Have to allocate a new big-enough buffer and copy.
-        uint16_t messageSize            = buf->TotalLength();
-        System::PacketBufferHandle copy = System::PacketBufferHandle::New(messageSize, 0);
-        if (copy.IsNull() || buf->Read(copy->Start(), messageSize) != CHIP_NO_ERROR)
-        {
-            ChipLogError(Inet, "No memory to flatten incoming packet buffer chain of size %u", buf->TotalLength());
-            return;
-        }
-        buf = std::move(copy);
+        ChipLogError(Inet, "Cannot copy received pbuf of size %u", p->tot_len);
     }
+    buf->SetDataLength(p->tot_len);
 
     pktInfo = GetPacketInfo(buf);
     if (pktInfo != nullptr)
@@ -371,19 +387,14 @@ void UDPEndPointImplLwIP::LwIPReceiveUDPMessage(void * arg, struct udp_pcb * pcb
         pktInfo->DestPort    = pcb->local_port;
     }
 
-    ep->Retain();
     CHIP_ERROR err = ep->GetSystemLayer().ScheduleLambda([ep, p = System::LwIPPacketBufferView::UnsafeGetLwIPpbuf(buf)] {
         ep->HandleDataReceived(System::PacketBufferHandle::Adopt(p));
-        ep->Release();
     });
+
     if (err == CHIP_NO_ERROR)
     {
         // If ScheduleLambda() succeeded, it has ownership of the buffer, so we need to release it (without freeing it).
         static_cast<void>(std::move(buf).UnsafeRelease());
-    }
-    else
-    {
-        ep->Release();
     }
 }
 
@@ -410,13 +421,24 @@ CHIP_ERROR UDPEndPointImplLwIP::SetMulticastLoopback(IPVersion aIPVersion, bool 
 CHIP_ERROR UDPEndPointImplLwIP::IPv4JoinLeaveMulticastGroupImpl(InterfaceId aInterfaceId, const IPAddress & aAddress, bool join)
 {
 #if LWIP_IPV4 && LWIP_IGMP
-    const auto method = join ? igmp_joingroup_netif : igmp_leavegroup_netif;
-
-    struct netif * const lNetif = FindNetifFromInterfaceId(aInterfaceId);
-    VerifyOrReturnError(lNetif != nullptr, INET_ERROR_UNKNOWN_INTERFACE);
-
     const ip4_addr_t lIPv4Address = aAddress.ToIPv4();
-    const err_t lStatus           = method(lNetif, &lIPv4Address);
+    err_t lStatus;
+
+    if (aInterfaceId.IsPresent())
+    {
+
+        struct netif * const lNetif = FindNetifFromInterfaceId(aInterfaceId);
+        VerifyOrReturnError(lNetif != nullptr, INET_ERROR_UNKNOWN_INTERFACE);
+
+        lStatus = join ? igmp_joingroup_netif(lNetif, &lIPv4Address) //
+                       : igmp_leavegroup_netif(lNetif, &lIPv4Address);
+    }
+    else
+    {
+        lStatus = join ? igmp_joingroup(IP4_ADDR_ANY4, &lIPv4Address) //
+                       : igmp_leavegroup(IP4_ADDR_ANY4, &lIPv4Address);
+    }
+
     if (lStatus == ERR_MEM)
     {
         return CHIP_ERROR_NO_MEMORY;
@@ -431,13 +453,21 @@ CHIP_ERROR UDPEndPointImplLwIP::IPv4JoinLeaveMulticastGroupImpl(InterfaceId aInt
 CHIP_ERROR UDPEndPointImplLwIP::IPv6JoinLeaveMulticastGroupImpl(InterfaceId aInterfaceId, const IPAddress & aAddress, bool join)
 {
 #ifdef HAVE_IPV6_MULTICAST
-    const auto method = join ? mld6_joingroup_netif : mld6_leavegroup_netif;
-
-    struct netif * const lNetif = FindNetifFromInterfaceId(aInterfaceId);
-    VerifyOrReturnError(lNetif != nullptr, INET_ERROR_UNKNOWN_INTERFACE);
-
     const ip6_addr_t lIPv6Address = aAddress.ToIPv6();
-    const err_t lStatus           = method(lNetif, &lIPv6Address);
+    err_t lStatus;
+    if (aInterfaceId.IsPresent())
+    {
+        struct netif * const lNetif = FindNetifFromInterfaceId(aInterfaceId);
+        VerifyOrReturnError(lNetif != nullptr, INET_ERROR_UNKNOWN_INTERFACE);
+        lStatus = join ? mld6_joingroup_netif(lNetif, &lIPv6Address) //
+                       : mld6_leavegroup_netif(lNetif, &lIPv6Address);
+    }
+    else
+    {
+        lStatus = join ? mld6_joingroup(IP6_ADDR_ANY6, &lIPv6Address) //
+                       : mld6_leavegroup(IP6_ADDR_ANY6, &lIPv6Address);
+    }
+
     if (lStatus == ERR_MEM)
     {
         return CHIP_ERROR_NO_MEMORY;

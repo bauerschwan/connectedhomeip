@@ -57,9 +57,9 @@ CHIP_ERROR RequestCommissioning(int index)
  */
 void PrepareForCommissioning(const Dnssd::DiscoveredNodeData * selectedCommissioner)
 {
-    CastingServer::GetInstance()->InitServer(HandleCommissioningCompleteCallback);
+    CastingServer::GetInstance()->Init();
 
-    CastingServer::GetInstance()->OpenBasicCommissioningWindow();
+    CastingServer::GetInstance()->OpenBasicCommissioningWindow(HandleCommissioningCompleteCallback);
 
     // Display onboarding payload
     chip::DeviceLayer::ConfigurationMgr().LogDeviceConfig();
@@ -109,10 +109,20 @@ void InitCommissioningFlow(intptr_t commandArg)
     }
 }
 
-CHIP_ERROR HandleCommissioningCompleteCallback()
+void LaunchURLResponseCallback(CHIP_ERROR err)
 {
-    ChipLogProgress(AppServer, "HandleCommissioningCompleteCallback calling ContentLauncherLaunchURL");
-    return CastingServer::GetInstance()->ContentLauncherLaunchURL(kContentUrl, kContentDisplayStr);
+    ChipLogProgress(AppServer, "LaunchURLResponseCallback called with %" CHIP_ERROR_FORMAT, err.Format());
+}
+
+void HandleCommissioningCompleteCallback(CHIP_ERROR err)
+{
+    ChipLogProgress(AppServer, "HandleCommissioningCompleteCallback called with %" CHIP_ERROR_FORMAT, err.Format());
+    if (err == CHIP_NO_ERROR)
+    {
+        ReturnOnFailure(
+            CastingServer::GetInstance()->ContentLauncherLaunchURL(kContentUrl, kContentDisplayStr, LaunchURLResponseCallback));
+        ChipLogProgress(AppServer, "ContentLauncherLaunchURL called successfully");
+    }
 }
 
 #if CHIP_DEVICE_CONFIG_ENABLE_COMMISSIONER_DISCOVERY_CLIENT
@@ -122,7 +132,8 @@ void HandleUDCSendExpiration(System::Layer * aSystemLayer, void * context)
 
     // Send User Directed commissioning request
     ReturnOnFailure(CastingServer::GetInstance()->SendUserDirectedCommissioningRequest(chip::Transport::PeerAddress::UDP(
-        selectedCommissioner->ipAddress[0], selectedCommissioner->port, selectedCommissioner->interfaceId)));
+        selectedCommissioner->resolutionData.ipAddress[0], selectedCommissioner->resolutionData.port,
+        selectedCommissioner->resolutionData.interfaceId)));
 }
 #endif // CHIP_DEVICE_CONFIG_ENABLE_COMMISSIONER_DISCOVERY_CLIENT
 

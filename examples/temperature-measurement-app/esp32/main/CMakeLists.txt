@@ -20,6 +20,7 @@ set(PRIV_INCLUDE_DIRS_LIST
                       "${CMAKE_SOURCE_DIR}/third_party/connectedhomeip/zzz_generated/temperature-measurement-app/"
                       "${CMAKE_CURRENT_LIST_DIR}/include"
                       "${CMAKE_SOURCE_DIR}/third_party/connectedhomeip/examples/platform/esp32"
+                      "${CMAKE_SOURCE_DIR}/third_party/connectedhomeip/examples/providers"
 )
 set(SRC_DIRS_LIST
                       "${CMAKE_CURRENT_LIST_DIR}"
@@ -50,6 +51,8 @@ set(SRC_DIRS_LIST
                       "${CMAKE_SOURCE_DIR}/third_party/connectedhomeip/src/app/clusters/network-commissioning"
                       "${CMAKE_SOURCE_DIR}/third_party/connectedhomeip/src/app/clusters/operational-credentials-server"
                       "${CMAKE_SOURCE_DIR}/third_party/connectedhomeip/examples/platform/esp32/route_hook"
+                      "${CMAKE_SOURCE_DIR}/third_party/connectedhomeip/examples/platform/esp32/common"
+                      "${CMAKE_SOURCE_DIR}/third_party/connectedhomeip/examples/providers"
 )
 
 set(PRIV_REQUIRES_LIST chip QRCode bt)
@@ -100,7 +103,7 @@ pw_proto_library(attributes_service
   STRIP_PREFIX
     ${CHIP_ROOT}/examples/common/pigweed/protos
   DEPS
-    pw_protobuf.common_protos
+    pw_protobuf.common_proto
 )
 
 pw_proto_library(button_service
@@ -111,7 +114,7 @@ pw_proto_library(button_service
   STRIP_PREFIX
     ${CHIP_ROOT}/examples/common/pigweed/protos
   DEPS
-    pw_protobuf.common_protos
+    pw_protobuf.common_proto
 )
 
 pw_proto_library(descriptor_service
@@ -122,7 +125,7 @@ pw_proto_library(descriptor_service
   STRIP_PREFIX
     ${CHIP_ROOT}/examples/common/pigweed/protos
   DEPS
-    pw_protobuf.common_protos
+    pw_protobuf.common_proto
 )
 
 pw_proto_library(device_service
@@ -135,7 +138,7 @@ pw_proto_library(device_service
   STRIP_PREFIX
     ${CHIP_ROOT}/examples/common/pigweed/protos
   DEPS
-    pw_protobuf.common_protos
+    pw_protobuf.common_proto
 )
 
 pw_proto_library(wifi_service
@@ -146,7 +149,7 @@ pw_proto_library(wifi_service
   PREFIX
     wifi_service
   DEPS
-    pw_protobuf.common_protos
+    pw_protobuf.common_proto
   STRIP_PREFIX
     ${CHIP_ROOT}/examples/common/pigweed/protos
 )

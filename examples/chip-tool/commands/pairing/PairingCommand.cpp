@@ -45,14 +45,10 @@ CHIP_ERROR PairingCommand::RunInternal(NodeId remoteId)
     case PairingMode::None:
         err = Unpair(remoteId);
         break;
-    case PairingMode::QRCode:
+    case PairingMode::Code:
         err = PairWithCode(remoteId);
         break;
-    case PairingMode::ManualCode:
-        err = PairWithCode(remoteId);
-        break;
-    case PairingMode::QRCodePaseOnly:
-    case PairingMode::ManualCodePaseOnly:
+    case PairingMode::CodePaseOnly:
         err = PaseWithCode(remoteId);
         break;
     case PairingMode::Ble:
@@ -148,9 +144,22 @@ void PairingCommand::OnStatusUpdate(DevicePairingDelegate::Status status)
     {
     case DevicePairingDelegate::Status::SecurePairingSuccess:
         ChipLogProgress(chipTool, "Secure Pairing Success");
+        ChipLogProgress(chipTool, "CASE establishment successful");
         break;
     case DevicePairingDelegate::Status::SecurePairingFailed:
         ChipLogError(chipTool, "Secure Pairing Failed");
+        SetCommandExitStatus(CHIP_ERROR_INCORRECT_STATE);
+        break;
+    case DevicePairingDelegate::Status::SecurePairingDiscoveringMoreDevices:
+        if (IsDiscoverOnce())
+        {
+            ChipLogError(chipTool, "Secure Pairing Failed");
+            SetCommandExitStatus(CHIP_ERROR_INCORRECT_STATE);
+        }
+        else
+        {
+            ChipLogProgress(chipTool, "Secure Pairing Discovering More Devices");
+        }
         break;
     }
 }
@@ -160,7 +169,8 @@ void PairingCommand::OnPairingComplete(CHIP_ERROR err)
     if (err == CHIP_NO_ERROR)
     {
         ChipLogProgress(chipTool, "Pairing Success");
-        if (mPairingMode == PairingMode::QRCodePaseOnly || mPairingMode == PairingMode::ManualCodePaseOnly)
+        ChipLogProgress(chipTool, "PASE establishment successful");
+        if (mPairingMode == PairingMode::CodePaseOnly)
         {
             SetCommandExitStatus(err);
         }

@@ -37,8 +37,10 @@ namespace chip {
  *
  * E.g. The application will send on/off commands to peer for the OnOff cluster.
  *
+ * The handler is not allowed to hold onto the pointer to the SessionHandler that is passed in.
  */
-using BoundDeviceChangedHandler = void (*)(const EmberBindingTableEntry & binding, DeviceProxy * peer_device, void * context);
+using BoundDeviceChangedHandler = void (*)(const EmberBindingTableEntry & binding, OperationalDeviceProxy * peer_device,
+                                           void * context);
 
 /**
  * Application callback function when a context used in NotifyBoundClusterChanged will not be needed and should be
@@ -104,7 +106,7 @@ public:
      * Notifies the BindingManager that a fabric is removed from the device
      *
      */
-    void FabricRemoved(CompressedFabricId compressedId, FabricIndex fabricIndex);
+    void FabricRemoved(FabricIndex fabricIndex);
 
     /*
      * Notify a cluster change to **all** bound devices associated with the (endpoint, cluster) tuple.
@@ -123,13 +125,13 @@ public:
 private:
     static BindingManager sBindingManager;
 
-    static void HandleDeviceConnected(void * context, OperationalDeviceProxy * device);
-    void HandleDeviceConnected(OperationalDeviceProxy * device);
+    static void HandleDeviceConnected(void * context, Messaging::ExchangeManager & exchangeMgr, SessionHandle & sessionHandle);
+    void HandleDeviceConnected(Messaging::ExchangeManager & exchangeMgr, SessionHandle & sessionHandle);
 
-    static void HandleDeviceConnectionFailure(void * context, PeerId peerId, CHIP_ERROR error);
-    void HandleDeviceConnectionFailure(PeerId peerId, CHIP_ERROR error);
+    static void HandleDeviceConnectionFailure(void * context, const ScopedNodeId & peerId, CHIP_ERROR error);
+    void HandleDeviceConnectionFailure(const ScopedNodeId & peerId, CHIP_ERROR error);
 
-    CHIP_ERROR EstablishConnection(FabricIndex fabric, NodeId node);
+    CHIP_ERROR EstablishConnection(const ScopedNodeId & nodeId);
 
     PendingNotificationMap mPendingNotificationMap;
     BoundDeviceChangedHandler mBoundDeviceChangedHandler;
@@ -137,6 +139,9 @@ private:
 
     Callback::Callback<OnDeviceConnected> mOnConnectedCallback;
     Callback::Callback<OnDeviceConnectionFailure> mOnConnectionFailureCallback;
+
+    // Used to keep track of synchronous failures from FindOrEstablishSession.
+    CHIP_ERROR mLastSessionEstablishmentError;
 };
 
 } // namespace chip
