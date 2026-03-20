@@ -63,6 +63,4 @@ config SYSTEM_WORKQUEUE_STACK_SIZE
 	int
 	default 2800
 
-endif # CHIP_DFU_OVER_BT_SMP
-
 endif # CHIP
